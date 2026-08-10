@@ -61,9 +61,15 @@ class AudioManager {
             let inputNode = self.audioEngine.inputNode
             inputNode.removeTap(onBus: 0)
 
-            if systemText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !self.accumulatedAudio.isEmpty {
-                // System STT was empty — fallback to Whisper server
-                print("[AudioManager] System STT empty, falling back to Whisper server...")
+            let cleanSystemText = systemText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if !cleanSystemText.isEmpty {
+                print("[AudioManager] System STT captured: '\(cleanSystemText)'")
+                DispatchQueue.main.async {
+                    self.onTranscriptionFinished?(cleanSystemText)
+                }
+            } else {
+                print("[AudioManager] System STT empty or stalled, falling back to Whisper server on port 9000...")
                 self.forceSendAudioToWhisper()
             }
         }
@@ -71,21 +77,34 @@ class AudioManager {
 
     private func forceSendAudioToWhisper() {
         let dataToSend = self.accumulatedAudio
-        guard let url = URL(string: self.whisperEndpoint) else { return }
+        guard let url = URL(string: self.whisperEndpoint) else {
+            DispatchQueue.main.async {
+                self.onTranscriptionFinished?("")
+            }
+            return
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         request.httpBody = dataToSend
-        request.timeoutInterval = 2.0
+        request.timeoutInterval = 2.5
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
-            if let json = try? JSONSerialization.jsonObject(with: data ?? Data()) as? [String: Any],
-               let text = json["text"] as? String, !text.isEmpty {
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let text = json["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let cleanWhisperText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                print("[AudioManager] Whisper server returned: '\(cleanWhisperText)'")
                 DispatchQueue.main.async {
-                    self.onTranscriptionUpdate?(text)
-                    self.onTranscriptionFinished?(text)
+                    self.onTranscriptionUpdate?(cleanWhisperText)
+                    self.onTranscriptionFinished?(cleanWhisperText)
+                }
+            } else {
+                print("[AudioManager] Whisper fallback empty or unreachable.")
+                DispatchQueue.main.async {
+                    self.onTranscriptionFinished?("")
                 }
             }
         }.resume()
@@ -259,7 +278,7 @@ class AudioManager {
             "text": text,
             "emotion": emotion,
             "speed": speed,
-            "voice_id": "af_bella" // Changed from "default" to a softer voice
+            "voice_id": "am_onyx" // American Male TTS voice profile
         ]
 
         guard let url = URL(string: kokoroEndpoint) else {

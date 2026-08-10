@@ -4,9 +4,11 @@ train: true
 fine_tune_type: "lora"
 mask_prompt: true
 num_layers: -1
-batch_size: 4
+batch_size: 2
+grad_accumulation_steps: 2
+grad_checkpoint: true
 iters: 3000
-learning_rate: 3e-4
+learning_rate: 2e-5
 val_batches: 25
 lora_parameters:
   rank: 64

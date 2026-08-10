@@ -194,7 +194,23 @@ struct ByteSettingsView: View {
                             .foregroundColor(.green)
                     }
                     HStack {
-                        Text("Screen Vision OCR:")
+                        Text("Visual Vision Engine:")
+                            .foregroundColor(.white.opacity(0.7))
+                        Spacer()
+                        Text(ByteVisionEngine.shared.activeEngineName)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.orange)
+                    }
+                    HStack {
+                        Text("Perception Mode:")
+                            .foregroundColor(.white.opacity(0.7))
+                        Spacer()
+                        Text("Event-Driven & On-Demand (0% Idle)")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(.green)
+                    }
+                    HStack {
+                        Text("Visual Perception Context:")
                             .foregroundColor(.white.opacity(0.7))
                         Spacer()
                         Text(ByteVisionEngine.shared.formattedVisionContextForAI())
@@ -228,6 +244,14 @@ struct ByteSettingsView: View {
                         Text(useCloudAI ? "Gemini 2.5 Flash" : "Ollama LLaMA 3.2 (Local)")
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundColor(.cyan)
+                    }
+                    HStack {
+                        Text("Vision Model:")
+                            .foregroundColor(.white.opacity(0.7))
+                        Spacer()
+                        Text("Florence-2-Base (232M / Port 9005)")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.orange)
                     }
                     HStack {
                         Text("STT Engine:")

@@ -72,22 +72,46 @@ class DialogueNaturalness {
         return result
     }
 
-    /// Clean text for TTS compatibility
-    private static func normalizeForTTS(_ text: String) -> String {
+    /// Clean text for TTS compatibility (strips metadata tags & converts ALL-CAPS words to lowercase)
+    static func normalizeForTTS(_ text: String) -> String {
         var cleaned = text
 
-        // Remove problematic characters
+        // 1. Strip bracketed metadata tags & uppercase headers
+        cleaned = cleaned.replacingOccurrences(of: #"\[ACTION:[^\]]*\]"#, with: "", options: [.regularExpression, .caseInsensitive])
+        cleaned = cleaned.replacingOccurrences(of: #"\[EMOTION:[^\]]*\]"#, with: "", options: [.regularExpression, .caseInsensitive])
+        cleaned = cleaned.replacingOccurrences(of: #"\[CMD:[^\]]*\]"#, with: "", options: [.regularExpression, .caseInsensitive])
+        cleaned = cleaned.replacingOccurrences(of: #"CONTEXT:"#, with: "", options: .caseInsensitive)
+        cleaned = cleaned.replacingOccurrences(of: #"RESPONSE:"#, with: "", options: .caseInsensitive)
+        cleaned = cleaned.replacingOccurrences(of: #"USER HIGHLIGHTED/SELECTED TEXT:"#, with: "", options: .caseInsensitive)
+        cleaned = cleaned.replacingOccurrences(of: #"Copied Image Analysis:"#, with: "", options: .caseInsensitive)
+
+        // 2. Remove problematic formatting characters
         cleaned = cleaned.replacingOccurrences(of: "\"", with: "")
         cleaned = cleaned.replacingOccurrences(of: "*", with: "")
         cleaned = cleaned.replacingOccurrences(of: "_", with: "")
         cleaned = cleaned.replacingOccurrences(of: "#", with: "")
+        cleaned = cleaned.replacingOccurrences(of: "`", with: "")
 
-        // Expand common abbreviations
+        // 3. Ignore spelling out ALL-CAPS words: convert multi-letter uppercase words to lowercase for smooth TTS reading
+        let words = cleaned.components(separatedBy: .whitespacesAndNewlines)
+        let filteredWords = words.compactMap { word -> String? in
+            let trimmed = word.trimmingCharacters(in: .punctuationCharacters)
+            if trimmed.isEmpty { return nil }
+
+            if trimmed.count >= 2 && trimmed == trimmed.uppercased() && trimmed.rangeOfCharacter(from: CharacterSet.letters.inverted) == nil {
+                let lower = trimmed.lowercased()
+                return word.replacingOccurrences(of: trimmed, with: lower)
+            }
+            return word
+        }
+        cleaned = filteredWords.joined(separator: " ")
+
+        // 4. Expand common abbreviations
         cleaned = cleaned.replacingOccurrences(of: "btw", with: "by the way")
         cleaned = cleaned.replacingOccurrences(of: "lol", with: "haha")
         cleaned = cleaned.replacingOccurrences(of: "omg", with: "oh my gosh")
 
-        // Remove excess whitespace
+        // 5. Remove excess whitespace
         let components = cleaned.components(separatedBy: .whitespaces)
         cleaned = components.filter { !$0.isEmpty }.joined(separator: " ")
 

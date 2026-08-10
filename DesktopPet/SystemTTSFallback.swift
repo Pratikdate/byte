@@ -15,7 +15,13 @@ class SystemTTSFallback: NSObject, AVSpeechSynthesizerDelegate {
 
     func speak(_ text: String, emotion: String = "neutral", completion: (() -> Void)? = nil) {
         self.completion = completion
-        let utterance = AVSpeechUtterance(string: text)
+        let processedText = DialogueNaturalness.enhanceForSpeech(text, emotion: emotion)
+        guard !processedText.isEmpty else {
+            completion?()
+            return
+        }
+
+        let utterance = AVSpeechUtterance(string: processedText)
 
         // Map emotion to speech characteristics
         utterance.rate = SystemTTSFallback.speechRateForEmotion(emotion)

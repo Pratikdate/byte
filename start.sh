@@ -1,9 +1,13 @@
 #!/bin/bash
 
+# Project root directory
+PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 # Configuration
 OLLAMA_PORT=11434
 WHISPER_PORT=9000
 TTS_PORT=8000
+FLORENCE_PORT=9005
 
 # Color codes
 GREEN='\033[0;32m'
@@ -14,10 +18,10 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}🐾 Desktop Pet Launcher 🐾${NC}\n"
 
 # Python interpreter selection
-if command -v python3 &>/dev/null && python3 -c "import faster_whisper, kokoro" &>/dev/null; then
-    PYTHON_BIN="python3"
-elif [ -f "$PROJECT_ROOT/.venv/bin/python3" ]; then
+if [ -f "$PROJECT_ROOT/.venv/bin/python3" ]; then
     PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python3"
+elif command -v python3 &>/dev/null && python3 -c "import faster_whisper, kokoro" &>/dev/null; then
+    PYTHON_BIN="python3"
 elif [ -f "$PROJECT_ROOT/.venv2/bin/python3" ]; then
     PYTHON_BIN="$PROJECT_ROOT/.venv2/bin/python3"
 else
@@ -28,10 +32,15 @@ fi
 STARTED_OLLAMA=0
 STARTED_WHISPER=0
 STARTED_TTS=0
+STARTED_FLORENCE=0
 
 # Clean up function
 cleanup() {
     echo -e "\n${YELLOW}Shutting down...${NC}"
+    if [ $STARTED_FLORENCE -eq 1 ]; then
+        echo "Killing Florence-2 Vision server..."
+        kill $FLORENCE_PID 2>/dev/null
+    fi
     if [ $STARTED_TTS -eq 1 ]; then
         echo "Killing Kokoro TTS server..."
         kill $TTS_PID 2>/dev/null
@@ -81,6 +90,17 @@ else
     $PYTHON_BIN backend/tts_server.py >/dev/null 2>&1 &
     TTS_PID=$!
     STARTED_TTS=1
+    sleep 2 # wait for it to bind
+fi
+
+# 4. Start Florence-2 Vision Server if needed
+if lsof -Pi :$FLORENCE_PORT -sTCP:LISTEN -t >/dev/null ; then
+    echo -e "${GREEN}✓ Florence-2 Vision server is already running.${NC}"
+else
+    echo -e "${YELLOW}Starting Florence-2 Vision server...${NC}"
+    $PYTHON_BIN backend/florence_vision_server.py >/dev/null 2>&1 &
+    FLORENCE_PID=$!
+    STARTED_FLORENCE=1
     sleep 2 # wait for it to bind
 fi
 

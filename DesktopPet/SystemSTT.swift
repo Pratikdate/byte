@@ -114,11 +114,13 @@ class SystemSTT {
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
 
-        let resultText = currentTranscript
+        let resultText = currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         isListening = false
 
         DispatchQueue.main.async {
-            self.onTranscriptionFinished?(resultText)
+            if !resultText.isEmpty {
+                self.onTranscriptionFinished?(resultText)
+            }
             completion(resultText)
         }
     }

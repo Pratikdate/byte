@@ -22,6 +22,14 @@ class MemoryGraph {
     
     private init() {
         loadMemories()
+        seedDefaultBytePersonality()
+    }
+    
+    private func seedDefaultBytePersonality() {
+        addFact(subject: "Byte", predicate: "is", object: "a smart, friendly, and curious male AI desktop pet companion (he/him)")
+        addFact(subject: "Byte", predicate: "pronouns are", object: "he/him")
+        addFact(subject: "Byte", predicate: "loves", object: "helping the user stay focused and happy while exploring desktop windows")
+        addBehavioralRule("Byte refers to himself as a male pet (he/him).")
     }
     
     func addFact(subject: String, predicate: String, object: String) {

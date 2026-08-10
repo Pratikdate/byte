@@ -24,6 +24,9 @@ Kokoro/
 *.safetensors
 training/byte_fused_model/
 *.log
-*_backup.jsonl
+*_backup*.jsonl
+*.bak
+casual_reflective_100k.jsonl
+training/training_data/versions/
 .byte_dequantized_tmp/
 chat_history.json

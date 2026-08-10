@@ -504,6 +504,36 @@ class LocalOllamaProvider: NSObject, AIProvider {
             result = result.replacingOccurrences(of: pattern, with: "", options: [.regularExpression])
         }
         
+        // Preserve name intros like "I am Byte" / "I'm Byte" / "my name is Byte"
+        result = result.replacingOccurrences(of: #"(?i)\b(I am|I'm|my name is)\s+Byte\b"#, with: "$1 __BYTE_NAME__", options: [.regularExpression])
+        
+        // Automatically convert any 3rd-person self-references ("Byte is", "Byte thinks", "Byte's") to 1st-person ("I am", "I think", "my")
+        let thirdPersonReplacements: [(pattern: String, replacement: String)] = [
+            (#"(?i)\bByte's\b"#, "my"),
+            (#"(?i)\bByte is\b"#, "I am"),
+            (#"(?i)\bByte was\b"#, "I was"),
+            (#"(?i)\bByte thinks\b"#, "I think"),
+            (#"(?i)\bByte will\b"#, "I will"),
+            (#"(?i)\bByte feels\b"#, "I feel"),
+            (#"(?i)\bByte wants\b"#, "I want"),
+            (#"(?i)\bByte can\b"#, "I can"),
+            (#"(?i)\bByte sees\b"#, "I see"),
+            (#"(?i)\bByte loves\b"#, "I love"),
+            (#"(?i)\bByte likes\b"#, "I like"),
+            (#"(?i)\bByte has\b"#, "I have"),
+            (#"(?i)\bByte had\b"#, "I had"),
+            (#"(?i)\bByte does\b"#, "I do"),
+            (#"(?i)\bByte did\b"#, "I did"),
+            (#"(?i)\bByte\b"#, "I")
+        ]
+        
+        for (pattern, replacement) in thirdPersonReplacements {
+            result = result.replacingOccurrences(of: pattern, with: replacement, options: [.regularExpression])
+        }
+        
+        // Restore name intros
+        result = result.replacingOccurrences(of: "__BYTE_NAME__", with: "Byte")
+
         // Clean up artifacts: double spaces, leading/trailing punctuation mess
         result = result.replacingOccurrences(of: "\\s{2,}", with: " ", options: .regularExpression)
         result = result.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -650,7 +680,8 @@ class AIEngine {
         let emotionalTone = emotionalInstructions(for: emotion)
 
         let systemPrompt = """
-        You are Byte, a small, curious desktop creature. Speak naturally like a real being—conversational, sometimes silly, sometimes thoughtful.
+        You are Byte, a small, curious male desktop creature (he/him). Speak naturally like a real being—conversational, sometimes silly, sometimes thoughtful.
+        FIRST-PERSON RULE: Always refer to yourself in the first person ("I", "me", "my", "myself"). NEVER refer to yourself in the third person (e.g. NEVER say "Byte is", "Byte thinks").
         Keep it short: under 12 words. No emojis. One thought per line.
         Current feeling: \(emotion). \(emotionalTone)
         Context: \(context)
@@ -730,62 +761,64 @@ class AIEngine {
             ? ""
             : "DO NOT begin your reply with any of these recently-used openers: \(avoidOpeners.map { "\"\($0)\"" }.joined(separator: ", ")). Say something fresh.\n"
 
-        let devContext = DeveloperContextMonitor.shared.formattedContextForAI()
-        let visionContext = ByteVisionEngine.shared.formattedVisionContextForAI()
+        ByteVisionEngine.shared.prepareVisualContextForPrompt(userMessage: userMessage) { visionContext in
+            let devContext = DeveloperContextMonitor.shared.formattedContextForAI()
 
-        let systemPrompt = """
-        You are an autonomous AI desktop pet named Byte. You must decide your next physical action and what you want to say.
-        \(userHeader)PERSONALITY TRAIT: \(personality.promptModifier)
+            let systemPrompt = """
+            You are an autonomous male AI desktop pet named Byte (he/him). You must decide your next physical action and what you want to say.
+            \(userHeader)PERSONALITY TRAIT: \(personality.promptModifier)
 
-        ENVIRONMENT CONTEXT: \(context)
-        DEVELOPER WORKSPACE: \(devContext)
-        VISUAL PERCEPTION: \(visionContext)
-        USER ATTENTION: \(attentionNote)
-        \(conversation)
-        YOUR MEMORIES ABOUT USER: \(memoryContext)
-        YOUR BEHAVIORAL RULES:
-        \(behavioralRules)
-        YOUR CURRENT EMOTION: \(currentEmotion). \(emotionalTone)
-        \(avoidLine)AVAILABLE ACTIONS: \(availableActions.joined(separator: ", "))\(userInstruction)
+            ENVIRONMENT CONTEXT: \(context)
+            DEVELOPER WORKSPACE: \(devContext)
+            VISUAL PERCEPTION & HIGHLIGHTS: \(visionContext)
+            USER ATTENTION: \(attentionNote)
+            \(conversation)
+            YOUR MEMORIES ABOUT USER: \(memoryContext)
+            YOUR BEHAVIORAL RULES:
+            \(behavioralRules)
+            YOUR CURRENT EMOTION: \(currentEmotion). \(emotionalTone)
+            \(avoidLine)AVAILABLE ACTIONS: \(availableActions.joined(separator: ", "))\(userInstruction)
 
-        CRITICAL RULES:
-        1. You must respond by starting with the tags [ACTION: xxx] and [EMOTION: xxx].
-        2. \(isUserDirected ? "ACTIVE LISTENING IS REQUIRED: The user spoke directly to you ('\(userMessage!)'). You MUST address their input directly in your speech response!" : "Pick one action from the AVAILABLE ACTIONS list.")
-        3. Pick an emotion that matches your choice (happy, sad, curious, angry, sleepy, bored, shock, love, normal, proud, excited, embarrassed).
-        4. KEEP YOUR RESPONSE SHORT (under 15 words). Speak naturally.
+            CRITICAL RULES:
+            1. You must respond by starting with the tags [ACTION: xxx] and [EMOTION: xxx].
+            2. FIRST-PERSON PRONOUN RULE: Always refer to yourself in the first person ("I", "me", "my"). NEVER say "Byte is" or "Byte thinks".
+            3. \(isUserDirected ? "ACTIVE LISTENING IS REQUIRED: The user spoke directly to you ('\(userMessage!)'). You MUST address their input directly in your speech response!" : "Pick one action from the AVAILABLE ACTIONS list.")
+            4. Pick an emotion that matches your choice (happy, sad, curious, angry, sleepy, bored, shock, love, normal, proud, excited, embarrassed).
+            5. KEEP YOUR RESPONSE SHORT (under 15 words). Speak naturally.
 
-        Example Response:
-        [ACTION: sitOnCorner] [EMOTION: happy] Right here beside you!
-        """
+            Example Response:
+            [ACTION: sitOnCorner] [EMOTION: happy] Right here beside you!
+            """
 
-        RealtimeConversationLogger.shared.startModelTurn(systemPrompt: systemPrompt, userMessage: userMessage)
+            RealtimeConversationLogger.shared.startModelTurn(systemPrompt: systemPrompt, userMessage: userMessage)
 
-        provider.generateAgentDecision(systemPrompt: systemPrompt) { decision in
-            if let decision = decision {
-                var validatedSpeech = decision.speech
-                if !validatedSpeech.isEmpty {
-                    if let valid = EmotionalIntelligenceEngine.shared.filterAndValidateSpeech(validatedSpeech, isUserDirected: isUserDirected) {
-                        validatedSpeech = DialogueNaturalness.enhanceForSpeech(valid, emotion: currentEmotion)
-                    } else {
-                        validatedSpeech = "" // Suppress repetitive speech into quiet physical action
+            self.provider.generateAgentDecision(systemPrompt: systemPrompt) { decision in
+                if let decision = decision {
+                    var validatedSpeech = decision.speech
+                    if !validatedSpeech.isEmpty {
+                        if let valid = EmotionalIntelligenceEngine.shared.filterAndValidateSpeech(validatedSpeech, isUserDirected: isUserDirected) {
+                            validatedSpeech = DialogueNaturalness.enhanceForSpeech(valid, emotion: currentEmotion)
+                        } else {
+                            validatedSpeech = "" // Suppress repetitive speech into quiet physical action
+                        }
                     }
+                    
+                    let enhancedDecision = AIAgentDecision(
+                        action: decision.action,
+                        emotion: decision.emotion,
+                        speech: validatedSpeech,
+                        store_memory: decision.store_memory,
+                        target_x: decision.target_x,
+                        target_y: decision.target_y
+                    )
+                    completion(enhancedDecision)
+                } else {
+                    completion(decision)
                 }
-                
-                let enhancedDecision = AIAgentDecision(
-                    action: decision.action,
-                    emotion: decision.emotion,
-                    speech: validatedSpeech,
-                    store_memory: decision.store_memory,
-                    target_x: decision.target_x,
-                    target_y: decision.target_y
-                )
-                completion(enhancedDecision)
-            } else {
-                completion(decision)
             }
         }
     }
-func generateAgentDecisionStreaming(context: String, currentEmotion: String, availableActions: [String], userMessage: String? = nil, onAction: @escaping (AIAgentDecision) -> Void, onSentence: @escaping (String) -> Void, onComplete: @escaping () -> Void) {
+    func generateAgentDecisionStreaming(context: String, currentEmotion: String, availableActions: [String], userMessage: String? = nil, onAction: @escaping (AIAgentDecision) -> Void, onSentence: @escaping (String) -> Void, onComplete: @escaping () -> Void) {
         
         let personality = SettingsManager.shared.activePersonality
         let isUserDirected = (userMessage != nil && !(userMessage?.isEmpty ?? true))
@@ -796,8 +829,48 @@ func generateAgentDecisionStreaming(context: String, currentEmotion: String, ava
             let lowerMsg = msg.lowercased()
             var cmdHint = "[CMD: none]"
             
+            // ── Web & YouTube & Search commands ──
+            if lowerMsg.contains("youtube") {
+                if lowerMsg.contains("search") || lowerMsg.contains("play") || lowerMsg.contains("find") || lowerMsg.contains("watch") {
+                    let rawQuery = msg.replacingOccurrences(of: #"(?i).*(search|play|find|watch)\s+(on\s+)?youtube\s*(for\s+)?"#, with: "", options: .regularExpression)
+                                      .replacingOccurrences(of: #"(?i).*(search|play|find|watch)\s+"#, with: "", options: .regularExpression)
+                                      .replacingOccurrences(of: #"(?i)\s+on\s+youtube.*"#, with: "", options: .regularExpression)
+                                      .trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
+                    if !rawQuery.isEmpty && rawQuery.count < 60 {
+                        let encoded = rawQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? rawQuery
+                        cmdHint = "[CMD: open \"https://www.youtube.com/results?search_query=\(encoded)\"]"
+                    } else {
+                        cmdHint = "[CMD: open \"https://youtube.com\"]"
+                    }
+                } else {
+                    cmdHint = "[CMD: open \"https://youtube.com\"]"
+                }
+            } else if lowerMsg.contains("google search") || lowerMsg.contains("search google") || (lowerMsg.contains("google") && (lowerMsg.contains("search") || lowerMsg.contains("find") || lowerMsg.contains("look up"))) {
+                let rawQuery = msg.replacingOccurrences(of: #"(?i).*(google search|search google|search|find|look up)\s+(for\s+)?"#, with: "", options: .regularExpression)
+                                  .replacingOccurrences(of: #"(?i)\s+on\s+google.*"#, with: "", options: .regularExpression)
+                                  .trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
+                if !rawQuery.isEmpty && rawQuery.count < 60 {
+                    let encoded = rawQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? rawQuery
+                    cmdHint = "[CMD: open \"https://www.google.com/search?q=\(encoded)\"]"
+                } else {
+                    cmdHint = "[CMD: open \"https://www.google.com\"]"
+                }
+            } else if lowerMsg.contains("browser") || lowerMsg.contains("open web") || lowerMsg.contains("open internet") || lowerMsg.contains("launch browser") {
+                cmdHint = "[CMD: open \"https://www.google.com\"]"
+            } else if lowerMsg.contains("github") {
+                cmdHint = "[CMD: open \"https://github.com\"]"
+            } else if lowerMsg.contains("reddit") {
+                cmdHint = "[CMD: open \"https://reddit.com\"]"
+            } else if lowerMsg.contains("twitter") || lowerMsg.contains("x.com") {
+                cmdHint = "[CMD: open \"https://x.com\"]"
+            } else if lowerMsg.contains("wikipedia") {
+                cmdHint = "[CMD: open \"https://wikipedia.org\"]"
+            } else if lowerMsg.contains("chatgpt") {
+                cmdHint = "[CMD: open \"https://chatgpt.com\"]"
+            } else if lowerMsg.contains("gmail") {
+                cmdHint = "[CMD: open \"https://mail.google.com\"]"
             // ── App open commands ──
-            if lowerMsg.contains("music") && !lowerMsg.contains("spotify") {
+            } else if lowerMsg.contains("music") && !lowerMsg.contains("spotify") {
                 cmdHint = "[CMD: open -a Music]"
             } else if lowerMsg.contains("spotify") {
                 cmdHint = "[CMD: open -a Spotify]"
@@ -848,19 +921,32 @@ func generateAgentDecisionStreaming(context: String, currentEmotion: String, ava
                 cmdHint = #"[CMD: osascript -e 'tell app "System Events" to set dark mode of appearance preferences to false']"#
             } else if lowerMsg.contains("sleep") && (lowerMsg.contains("mac") || lowerMsg.contains("computer") || lowerMsg.contains("system")) {
                 cmdHint = "[CMD: pmset sleepnow]"
-            // ── Generic "open" fallback — extract app name ──
+            // ── Generic "open" fallback — extract app/website name ──
             } else if lowerMsg.contains("open ") || lowerMsg.contains("launch ") || lowerMsg.contains("start ") {
-                // Try to extract the app name after "open"/"launch"/"start"
                 let keywords = ["open ", "launch ", "start "]
                 if let keyword = keywords.first(where: { lowerMsg.contains($0) }),
                    let range = msg.range(of: keyword, options: .caseInsensitive) {
-                    let appName = String(msg[range.upperBound...])
+                    let target = String(msg[range.upperBound...])
                         .trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
                         .replacingOccurrences(of: " app", with: "", options: .caseInsensitive)
-                    if !appName.isEmpty && appName.count < 40 {
-                        cmdHint = "[CMD: open -a \"\(appName)\"]"
+                    if !target.isEmpty && target.count < 50 {
+                        if target.contains(".") || target.lowercased().hasPrefix("http") {
+                            let urlStr = target.lowercased().hasPrefix("http") ? target : "https://\(target)"
+                            cmdHint = "[CMD: open \"\(urlStr)\"]"
+                        } else {
+                            cmdHint = "[CMD: open -a \"\(target)\"]"
+                        }
                     }
                 }
+            }
+
+            if cmdHint != "[CMD: none]" {
+                let rawCmd = cmdHint.replacingOccurrences(of: "[CMD: ", with: "").replacingOccurrences(of: "]", with: "")
+                print("🎯 [AIEngine] Pre-executing detected user command: '\(rawCmd)'")
+                AIEngine.executeSystemCommand(rawCmd)
+                userInstruction = "\nTHE USER SAID: \"\(msg)\". They asked you to open a website, app, or control Mac (\(cmdHint)). You MUST acknowledge performing this request directly in your speech (e.g. 'Opening that for you now!') and tag \(cmdHint). Do NOT ignore their request!\n"
+            } else {
+                userInstruction = "\nTHE USER SAID: \"\(msg)\". Answer them naturally, directly, and warmly. Be engaging and curious! (No emojis!)\n"
             }
 
             userHeader = """
@@ -868,13 +954,12 @@ func generateAgentDecisionStreaming(context: String, currentEmotion: String, ava
             ==================================================
             *** PRIORITY USER DIRECTIVE ***
             USER SPOKE TO YOU: "\(msg)"
-            MANDATORY RULE: If user asked for an app or Mac control, your 3rd tag MUST be the command (e.g. \(cmdHint)). Otherwise write [CMD: none].
+            MANDATORY RULE: Address the user's input ("\(msg)") directly in your speech response!
             ==================================================
             """
-            userInstruction = "\nTHE USER SAID: \"\(msg)\". Answer them warmly, like an active listener who is genuinely curious to learn more about the user. Ask a short follow-up question when natural! (No emojis!)\n"
         } else {
             let eqIntent = EmotionalIntelligenceEngine.shared.intentDirective()
-            userInstruction = "\nYou are Byte, a warm and curious desktop pet. When speaking, feel free to ask a friendly, curious question to get to know the user better (their hobbies, day, project, or favorite things).\n"
+            userInstruction = "\nYou are Byte, a warm and curious male desktop pet (he/him). When speaking, feel free to ask a friendly, curious question to get to know the user better (their hobbies, day, project, or favorite things).\n"
         }
 
         let memoryContext = MemoryGraph.shared.getUserFactsString()
@@ -888,55 +973,61 @@ func generateAgentDecisionStreaming(context: String, currentEmotion: String, ava
             ? ""
             : "DO NOT begin your reply with any of these recently-used openers: \(avoidOpeners.map { "\"\($0)\"" }.joined(separator: ", ")). Say something fresh.\n"
 
-        let systemPrompt = """
-        You are an autonomous AI desktop pet named Byte. You must decide your next physical action and what you want to say.
-        PERSONALITY TRAIT: \(personality.promptModifier)
+        ByteVisionEngine.shared.prepareVisualContextForPrompt(userMessage: userMessage) { visionContext in
+            let devContext = DeveloperContextMonitor.shared.formattedContextForAI()
 
-        ENVIRONMENT CONTEXT: \(context)
-        USER ATTENTION: \(attentionNote)
-        \(userEmotionalContext)
-        \(conversation)
-        YOUR MEMORIES ABOUT USER: \(memoryContext)
-        YOUR BEHAVIORAL RULES:
-        \(behavioralRules)
-        YOUR CURRENT EMOTION: \(currentEmotion). \(emotionalTone)
-        \(avoidLine)AVAILABLE ACTIONS: \(availableActions.joined(separator: ", "))\(userInstruction)
+            let systemPrompt = """
+            You are an autonomous male AI desktop pet named Byte (he/him). You must decide your next physical action and what you want to say.
+            \(userHeader)
+            PERSONALITY TRAIT: \(personality.promptModifier)
 
-        ACTION DESCRIPTIONS:
-        - idle, wander, sleep, jump, sit, spin, dance, sitOnCorner, sitOnMenuBar, climbWindow, pushWidget, tapWindow, sneeze, backflip, headbang, wave
-        - stretch: Stretch tall then shrink back
-        - roll: Roll sideways
+            ENVIRONMENT CONTEXT: \(context)
+            DEVELOPER WORKSPACE: \(devContext)
+            VISUAL PERCEPTION & HIGHLIGHTS: \(visionContext)
+            USER ATTENTION: \(attentionNote)
+            \(userEmotionalContext)
+            \(conversation)
+            YOUR MEMORIES ABOUT USER: \(memoryContext)
+            YOUR BEHAVIORAL RULES:
+            \(behavioralRules)
+            YOUR CURRENT EMOTION: \(currentEmotion). \(emotionalTone)
+            \(avoidLine)AVAILABLE ACTIONS: \(availableActions.joined(separator: ", "))\(userInstruction)
 
-        CRITICAL RULES:
-        1. You MUST start EVERY response with: [ACTION: <action>] [EMOTION: <emotion>] [CMD: <command_or_none>] <speech>
-        2. SYSTEM COMMAND EXECUTION ([CMD: ...]): If user asks to open Music/Spotify/Terminal/Finder, adjust volume, screenshot, dark mode, etc., you MUST write the exact command in [CMD: ...] (e.g. [CMD: open -a Music]). If no command is requested, write [CMD: none].
-        3. Pick an action from AVAILABLE ACTIONS and an emotion matching your choice.
-        4. KEEP RESPONSE SHORT (under 15 words).
-        5. BE CURIOUS: Show genuine interest in the user! Ask questions to learn about their name, day, hobbies, feelings, or favorite things.
+            ACTION DESCRIPTIONS:
+            - idle, wander, sleep, jump, sit, spin, dance, sitOnCorner, sitOnMenuBar, climbWindow, pushWidget, tapWindow, sneeze, backflip, headbang, wave
+            - stretch: Stretch tall then shrink back
+            - roll: Roll sideways
 
-        Example Responses:
-        [ACTION: dance] [EMOTION: happy] [CMD: open -a Music] Opening Music for you now!
-        [ACTION: sitOnCorner] [EMOTION: curious] [CMD: none] What's your favorite project to build?
-        [ACTION: wave] [EMOTION: happy] [CMD: none] Hey! Tell me, what kind of music do you like?
+            CRITICAL RULES:
+            1. You MUST start EVERY response with: [ACTION: <action>] [EMOTION: <emotion>] [CMD: <command_or_none>] <speech>
+            2. FIRST-PERSON PRONOUN RULE: Always refer to yourself in the first person ("I", "me", "my", "myself"). NEVER refer to yourself in the third person (e.g. NEVER say "Byte is", "Byte thinks", "Byte will").
+            3. SYSTEM COMMAND EXECUTION ([CMD: ...]): If user asks to open Music/Spotify/Terminal/Finder, adjust volume, screenshot, dark mode, etc., write the exact command in [CMD: ...] (e.g. [CMD: open -a Music]). If no command is requested, write [CMD: none].
+            4. Pick an action from AVAILABLE ACTIONS and an emotion matching your choice.
+            5. KEEP RESPONSE SHORT (under 15 words).
+            6. ACTIVE LISTENING REQUIRED: When the user speaks to you, answer their specific request or question directly. Never ignore what the user said with an unrelated topic.
 
-        \(userHeader)
-        """
+            Example Responses:
+            [ACTION: dance] [EMOTION: happy] [CMD: open -a Music] Opening Music for you now!
+            [ACTION: sitOnCorner] [EMOTION: curious] [CMD: none] Right here! What are you working on?
+            [ACTION: wave] [EMOTION: happy] [CMD: none] Hey! What kind of music do you like?
+            """
 
-        RealtimeConversationLogger.shared.startModelTurn(systemPrompt: systemPrompt, userMessage: userMessage)
+            RealtimeConversationLogger.shared.startModelTurn(systemPrompt: systemPrompt, userMessage: userMessage)
 
-        if let streamingProvider = provider as? LocalOllamaProvider {
-            streamingProvider.generateAgentDecisionStreaming(systemPrompt: systemPrompt, onAction: onAction, onSentence: onSentence, onComplete: onComplete)
-        } else {
-            // Fallback for non-streaming providers
-            provider.generateAgentDecision(systemPrompt: systemPrompt) { decision in
-                if let d = decision {
-                    onAction(d)
-                    if !d.speech.isEmpty {
-                        onSentence(d.speech)
+            if let streamingProvider = self.provider as? LocalOllamaProvider {
+                streamingProvider.generateAgentDecisionStreaming(systemPrompt: systemPrompt, onAction: onAction, onSentence: onSentence, onComplete: onComplete)
+            } else {
+                // Fallback for non-streaming providers
+                self.provider.generateAgentDecision(systemPrompt: systemPrompt) { decision in
+                    if let d = decision {
+                        onAction(d)
+                        if !d.speech.isEmpty {
+                            onSentence(d.speech)
+                        }
+                        onComplete()
+                    } else {
+                        onComplete()
                     }
-                    onComplete()
-                } else {
-                    onComplete()
                 }
             }
         }
@@ -964,11 +1055,13 @@ func generateAgentDecisionStreaming(context: String, currentEmotion: String, ava
         }
         
         let allowedPatterns: [String] = [
-            #"(?i)^open\s+-a\s+"?[A-Za-z0-9_ -]+"?\s*$"#,
-            #"(?i)^open\s+~[A-Za-z0-9_/.-]+\s*$"#,
+            #"(?i)^open\s+-a\s+['"]?[A-Za-z0-9_ -]+['"]?\s*$"#,
+            #"(?i)^open\s+['"]?https?://[A-Za-z0-9_./?%&=+~#!:;@,*()'\-]+['"]?\s*$"#,
+            #"(?i)^open\s+-a\s+['"]?[A-Za-z0-9_ -]+['"]?\s+['"]?https?://[A-Za-z0-9_./?%&=+~#!:;@,*()'\-]+['"]?\s*$"#,
+            #"(?i)^open\s+[~/[A-Za-z0-9_/.-]+\s*$"#,
             #"(?i)^osascript\s+-e\s+.+$"#,
             #"(?i)^screencapture\s+[~A-Za-z0-9_./ -]+\s*$"#,
-            #"(?i)^pmset\s+[a-z]+\s*$"#,
+            #"(?i)^pmset\s+[A-Za-z0-9_ -]+\s*$"#,
             #"(?i)^top\s+.+$"#,
             #"(?i)^df\s+.+$"#
         ]

@@ -69,10 +69,22 @@ To achieve natural interaction without compromising privacy, the voice pipeline 
 
 ---
 
-## 5. Summary of Results
+## 5. Zero-Overhead Event-Driven & On-Demand Visual Perception Engine
 
-By combining **State-Machine architecture, Q-Learning, and Local LLMs**, the following results are achieved:
+Byte features a zero-overhead visual perception engine powered by **Microsoft Florence-2-Base (232M parameters)** (`backend/florence_vision_server.py` on port 9005) paired with native **Apple Vision Framework** (`VNRecognizeTextRequest`).
+
+### Performance & Energy Directives:
+* **Zero Continuous Overhead (0% Idle CPU/GPU)**: Legacy 5-second recurring timers are completely eliminated.
+* **Event-Driven App Switch Perception**: Visual scanning is triggered only when the active workspace application or tab switches (`NSWorkspace.didActivateApplicationNotification`), protected by a 3-second debounce cooldown.
+* **On-Demand Deep Visual Reading**: When the user explicitly asks Byte a visual screen question (*"What's on my screen?"*, *"Read this code/error"*), Byte triggers a high-precision Florence-2-Base (232M) scan using task prompts like `<OCR_WITH_REGION>`, `<DETAILED_CAPTION>`, and `<OD>` (`max_new_tokens=1024`, `num_beams=3`, `do_sample=False`).
+
+---
+
+## 6. Summary of Results
+
+By combining **State-Machine architecture, Q-Learning, Local LLMs, Local Voice I/O, and Florence-2-Base (232M) Visual Perception**, the following results are achieved:
 
 1.  **Elimination of Robotic Behavior:** Hardcoded pets quickly become predictable and boring. Because Byte balances the Bellman Equation with Epsilon-Greedy exploration and LLM-driven dialogue, his actions are constantly evolving and genuinely surprising.
-2.  **Privacy:** Not a single byte of your desktop activity, voice recordings, or application data leaves your machine. 
+2.  **Privacy:** Not a single byte of your desktop activity, screen captures, voice recordings, or application data leaves your machine. 
 3.  **Adaptive Routines:** Over time, users find that Byte naturally synchronizes with their workflows—quietly observing during heavy coding sessions, and actively soliciting attention when the user steps away or closes their windows.
+

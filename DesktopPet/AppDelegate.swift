@@ -621,6 +621,7 @@ class BackgroundServerManager {
             self.ensureOllamaRunning()
             self.ensureWhisperServerRunning()
             self.ensureTTSServerRunning()
+            self.ensureFlorenceVisionServerRunning()
         }
     }
     
@@ -708,6 +709,37 @@ class BackgroundServerManager {
             let venvPy = "\(rootPath)/.venv/bin/python3"
             let scriptPath = "\(rootPath)/backend/tts_server.py"
             if FileManager.default.fileExists(atPath: scriptPath) {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: FileManager.default.fileExists(atPath: venvPy) ? venvPy : "/usr/bin/python3")
+                proc.arguments = [scriptPath]
+                try? proc.run()
+            }
+        }
+    }
+
+    private func ensureFlorenceVisionServerRunning() {
+        guard let url = URL(string: "http://localhost:9005/health") else { return }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 2.0)
+        request.httpMethod = "GET"
+        
+        let sema = DispatchSemaphore(value: 0)
+        var isRunning = false
+        
+        let task = URLSession.shared.dataTask(with: request) { _, response, _ in
+            if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
+                isRunning = true
+            }
+            sema.signal()
+        }
+        task.resume()
+        _ = sema.wait(timeout: .now() + 2.5)
+        
+        if !isRunning {
+            let rootPath = "/Users/shanacoder/Documents/Byte"
+            let venvPy = "\(rootPath)/.venv/bin/python3"
+            let scriptPath = "\(rootPath)/backend/florence_vision_server.py"
+            if FileManager.default.fileExists(atPath: scriptPath) {
+                print("🚀 [BackgroundServerManager] Starting Florence-2-Base (232M) Vision Server on port 9005...")
                 let proc = Process()
                 proc.executableURL = URL(fileURLWithPath: FileManager.default.fileExists(atPath: venvPy) ? venvPy : "/usr/bin/python3")
                 proc.arguments = [scriptPath]

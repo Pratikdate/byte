@@ -5,7 +5,12 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+LOG_FILE="$SCRIPT_DIR/train.log"
 
+# Tee stdout and stderr to train.log
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo "📝 Output logging to: $LOG_FILE"
 echo "🚀 Step 1: Formatting prompt/completion dataset & 3-way split..."
 python3 "$SCRIPT_DIR/prepare_compact_train.py"
 
@@ -24,9 +29,12 @@ python3 -m mlx_lm.lora \
     --config "$SCRIPT_DIR/lora_config.yaml" \
     --num-layers -1 \
     --iters 3000 \
-    --batch-size 4 \
-    --learning-rate 3e-4 \
+    --batch-size 2 \
+    --grad-accumulation-steps 2 \
+    --grad-checkpoint \
+    --learning-rate 2e-5 \
     --val-batches 25 \
+    --resume-adapter-file "$SCRIPT_DIR/adapters/0001000_adapters.safetensors" \
     --adapter-path "$SCRIPT_DIR/adapters"
 
 echo "⚙️ Step 4: Fusing LoRA adapters into compact standalone model..."
